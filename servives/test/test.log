@@ -1,0 +1,25 @@
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x30 pc=0x7a3d60]
+
+goroutine 1 [running]:
+github.com/yicaoyimuys/GoGameServer/core/libs/logger.(*rateLimiter).allow(0x0)
+	/home/funing/work/GoGameServer/core/libs/logger/logger.go:157 +0x40
+github.com/yicaoyimuys/GoGameServer/core/libs/logger.Error({0xe62e90, 0x12}, {0xc0000ab900, 0x2, 0x2})
+	/home/funing/work/GoGameServer/core/libs/logger/logger.go:176 +0x45
+github.com/yicaoyimuys/GoGameServer/core/libs.ERR(...)
+	/home/funing/work/GoGameServer/core/libs/export.go:15
+github.com/yicaoyimuys/GoGameServer/core/config.loadConfig({0xccafc0, 0x175c9e8}, {0xe5d8e9?, 0x413827?})
+	/home/funing/work/GoGameServer/core/config/config.go:46 +0x276
+github.com/yicaoyimuys/GoGameServer/core/config.load()
+	/home/funing/work/GoGameServer/core/config/config.go:30 +0x5e
+github.com/yicaoyimuys/GoGameServer/core/config.Init(...)
+	/home/funing/work/GoGameServer/core/config/config.go:25
+github.com/yicaoyimuys/GoGameServer/core/service.initConfig(...)
+	/home/funing/work/GoGameServer/core/service/service.go:91
+github.com/yicaoyimuys/GoGameServer/core/service.(*Service).init(0xc0000ab880)
+	/home/funing/work/GoGameServer/core/service/service.go:72 +0x8a
+github.com/yicaoyimuys/GoGameServer/core/service.NewService({0xe54d0e, 0x4})
+	/home/funing/work/GoGameServer/core/service/service.go:55 +0xbe
+main.main()
+	/home/funing/work/GoGameServer/servives/test/main.go:40 +0x37
+exit status 2

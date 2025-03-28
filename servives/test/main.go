@@ -4,10 +4,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/yicaoyimuys/GoGameServer/core/consts"
 	. "github.com/yicaoyimuys/GoGameServer/core/libs"
@@ -30,44 +32,81 @@ var (
 
 	connectNum   = 100
 	userAccounts = []string{}
+	wg           sync.WaitGroup
 )
 
 func main() {
 	//初始化Service
 	service.NewService(consts.Service_Test)
+	log.Printf("开始压力测试，计划连接数: %d", connectNum)
 
+	// 添加连接计数器
+	successCount := 0
+	failCount := 0
+	var countMutex sync.Mutex
+
+	// 获取服务器地址
+	if err := getServers(); err != nil {
+		log.Fatalf("获取服务器地址失败: %v", err)
+	}
+	log.Printf("成功获取服务器地址列表: %v", servers)
+
+	startTime := time.Now()
+
+	// 初始化账号并开始测试
+	initAccount()
+	log.Printf("初始化测试账号完成，共 %d 个账号", len(userAccounts))
+	for i := 0; i < len(userAccounts); i++ {
+		wg.Add(1)
+		go func(account string) {
+			defer wg.Done()
+			if err := startConnect(account); err != nil {
+				countMutex.Lock()
+				failCount++
+				countMutex.Unlock()
+				log.Printf("账号 %s 连接失败: %v", account, err)
+			} else {
+				countMutex.Lock()
+				successCount++
+				countMutex.Unlock()
+			}
+		}(userAccounts[i])
+	}
+
+	// 等待所有连接完成
+	wg.Wait()
+
+	// 输出测试结果
+	duration := time.Since(startTime)
+	log.Printf("测试完成:\n"+
+		"总连接数: %d\n"+
+		"成功: %d\n"+
+		"失败: %d\n"+
+		"耗时: %v",
+		connectNum,
+		successCount,
+		failCount,
+		duration)
+}
+
+func getServers() error {
 	//请求服务器连接地址
 	resp, err := http.Get("http://127.0.0.1:18881/GetConnector?type=Socket")
 	if err != nil {
 		ERR("请求服务器地址错误", zap.Error(err))
-		return
+		return err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		ERR("请求服务器地址错误", zap.Error(err))
-		return
+		return err
 	}
 	json.Unmarshal(body, &servers)
 	for _, v := range servers {
 		DEBUG(v)
 	}
-
-	//开始测试
-	startTest()
-
-	//保持进程
-	Run()
-}
-
-func startTest() {
-	//初始化使用账号
-	initAccount()
-
-	//开启链接
-	for i := 0; i < len(userAccounts); i++ {
-		go startConnect(userAccounts[i])
-	}
+	return nil
 }
 
 func initAccount() {
@@ -83,24 +122,25 @@ func initAccount() {
 	}
 }
 
-func startConnect(account string) {
+func startConnect(account string) error {
 	hashCode := hash.GetHash([]byte(account))
 
 	var serverIndex = hashCode % uint32(len(servers))
 	var server = servers[serverIndex]
+	log.Printf("账号 %s 开始连接服务器 %s", account, server)
 	//DEBUG(myUserId, serverIndex)
 
 	//服务器端ip和端口
 	addr, err := net.ResolveTCPAddr("tcp4", server)
 	if err != nil {
 		ERR("连接失败", zap.String("Account", account))
-		return
+		return err
 	}
 	//申请连接客户端
 	conn, err := net.DialTCP("tcp4", nil, addr)
 	if err != nil {
 		ERR("连接失败", zap.String("Account", account))
-		return
+		return err
 	}
 	INFO("连接成功", zap.String("Account", account))
 
@@ -112,6 +152,7 @@ func startConnect(account string) {
 
 	client.ping()
 	client.login()
+	return nil
 }
 
 type clientSession struct {
@@ -227,24 +268,25 @@ func (this *clientSession) handleMsg(msgId uint16, msgData proto.Message) {
 		//登录成功
 		data := msgData.(*gameProto.UserLoginS2C)
 		this.token = data.GetToken()
-		DEBUG("登录成功", zap.String("Token", this.token))
+		log.Printf("账号 %s 登录成功，token: %s", this.account, this.token)
 		//获取用户数据
 		this.getInfo()
 	} else if msgId == gameProto.ID_user_getInfo_s2c {
 		//获取用户信息成功
 		data := msgData.(*gameProto.UserGetInfoS2C)
-		DEBUG("用户信息", zap.Any("Data", data.GetData()))
+		log.Printf("账号 %s 获取用户信息成功: %v", this.account, data.GetData())
 		//加入聊天
 		this.joinChat()
 	} else if msgId == gameProto.ID_user_joinChat_s2c {
 		//加入聊天成功
-		DEBUG("加入聊天成功")
+		log.Printf("账号 %s 加入聊天成功", this.account)
 		//开始聊天
 		this.chat()
 	} else if msgId == gameProto.ID_user_chat_notice_s2c {
 		//收到聊天消息
 		data := msgData.(*gameProto.UserChatNoticeS2C)
-		DEBUG("收到聊天消息", zap.String("Account", this.account), zap.String("Message", data.GetUserName()+"说："+data.GetMsg()))
+		log.Printf("账号 %s 收到聊天消息: %s说：%s",
+			this.account, data.GetUserName(), data.GetMsg())
 	} else if msgId == gameProto.ID_error_notice_s2c {
 		data := msgData.(*gameProto.ErrorNoticeS2C)
 		errCode := data.GetErrorCode()
@@ -256,6 +298,7 @@ func (this *clientSession) handleMsg(msgId uint16, msgData proto.Message) {
 				go startConnect(this.account)
 			})
 		}
+		log.Printf("账号 %s 收到错误消息，错误码: %d", this.account, errCode)
 		DEBUG("收到错误消息", zap.Any("Data", data))
 	}
 }

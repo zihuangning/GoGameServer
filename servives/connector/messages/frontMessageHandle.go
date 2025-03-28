@@ -9,6 +9,7 @@ import (
 	"github.com/yicaoyimuys/GoGameServer/core/libs/grpc/ipc"
 	"github.com/yicaoyimuys/GoGameServer/core/libs/protos"
 	"github.com/yicaoyimuys/GoGameServer/core/libs/sessions"
+	"github.com/yicaoyimuys/GoGameServer/core/libs/stack"
 	"github.com/yicaoyimuys/GoGameServer/servives/public/gameProto"
 	"go.uber.org/zap"
 )
@@ -103,6 +104,24 @@ func sendErrorMsgToClient(session *sessions.FrontSession) {
 }
 
 func sendMsgToIpcService(serviceName string, clientSession *sessions.FrontSession, msgBody []byte) error {
+	defer stack.TryError()
+
+	if serviceName == "" {
+		return errors.New("serviceName is empty")
+	}
+
+	if clientSession == nil {
+		return errors.New("clientSession is nil")
+	}
+
+	if len(msgBody) == 0 {
+		return errors.New("msgBody is empty")
+	}
+
+	if core.Service == nil {
+		return errors.New("Service is nil")
+	}
+
 	ipcClient := core.Service.GetIpcClient(serviceName)
 	if ipcClient == nil {
 		return errors.New(serviceName + ": ipcClient not exists")
@@ -115,6 +134,8 @@ func sendMsgToIpcService(serviceName string, clientSession *sessions.FrontSessio
 		service = getGameService(clientSession, msgBody, ipcClient)
 	} else if serviceName == consts.Service_Chat {
 		service = getChatService(clientSession, msgBody, ipcClient)
+	} else {
+		return errors.New("unknown service: " + serviceName)
 	}
 
 	if service == "" {
