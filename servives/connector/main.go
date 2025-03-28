@@ -26,5 +26,8 @@ func main() {
 }
 
 func initModule() {
+	// 启动会话清理机制
+	//sessions.StartSessionCleanup()
+
 	module.StartServerTimer()
 }

@@ -33,5 +33,5 @@ func initMessage() {
 }
 
 func initModule() {
-
+	//sessions.StartSessionCleanup()
 }

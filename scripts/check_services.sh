@@ -133,6 +133,7 @@ check_all_services() {
     done
     
     show_system_status
+    curl http://localhost:8500/v1/catalog/services | sed 's/\\u003c/</g' | sed 's/\\u003e/>/g'
 }
 
 # 主逻辑
