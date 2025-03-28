@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"time"
 
 	"github.com/yicaoyimuys/GoGameServer/core/libs/logger"
 	"go.uber.org/zap"
@@ -13,14 +14,32 @@ import (
 )
 
 func NewServive(serviceAddress string, serviceName string, serviceId int, servicePort string) error {
-	client, err := api.NewClient(api.DefaultConfig())
+	// 添加重试机制
+	maxRetries := 5
+	var client *api.Client
+	var err error
+
+	for i := 0; i < maxRetries; i++ {
+		client, err = api.NewClient(api.DefaultConfig())
+		if err == nil {
+			break
+		}
+		logger.Info("Failed to create Consul client, retrying...",
+			zap.Error(err),
+			zap.Int("RetryCount", i+1))
+		time.Sleep(time.Second)
+	}
+
 	if err != nil {
 		return err
 	}
 
 	//服务器配置
 	address := serviceAddress
-	port, _ := strconv.Atoi(servicePort)
+	port, err := strconv.Atoi(servicePort)
+	if err != nil {
+		return err
+	}
 	id := address + ":" + servicePort + "-" + serviceName + "-" + cast.ToString(serviceId)
 	name := serviceName
 
@@ -41,7 +60,19 @@ func NewServive(serviceAddress string, serviceName string, serviceId int, servic
 			DeregisterCriticalServiceAfter: "10s", //check失败后10秒删除本服务
 		},
 	}
-	err = client.Agent().ServiceRegister(service)
+
+	// 添加服务注册重试机制
+	for i := 0; i < maxRetries; i++ {
+		err = client.Agent().ServiceRegister(service)
+		if err == nil {
+			break
+		}
+		logger.Info("Failed to register service with Consul, retrying...",
+			zap.Error(err),
+			zap.Int("RetryCount", i+1))
+		time.Sleep(time.Second)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -63,8 +94,19 @@ func WaitToUnRegistService(client *api.Client, serviceId string) {
 	close(quit)
 
 	//从服务中移除
-	err := client.Agent().ServiceDeregister(serviceId)
+	maxRetries := 3
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		err = client.Agent().ServiceDeregister(serviceId)
+		if err == nil {
+			break
+		}
+		logger.Error("Failed to deregister service from Consul, retrying...",
+			zap.Error(err),
+			zap.Int("RetryCount", i+1))
+		time.Sleep(time.Second)
+	}
 	if err != nil {
-		logger.Error("ConsulError", zap.Error(err))
+		logger.Error("Failed to deregister service from Consul after all retries", zap.Error(err))
 	}
 }
